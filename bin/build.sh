@@ -1,0 +1,6 @@
+#!/bin/bash
+# Install npm modules for deployment
+echo Installing npm modules...
+
+echo Shared Layer Utils......................................
+(cd lib/lambda/shared-layer/nodejs && npm ci --production)

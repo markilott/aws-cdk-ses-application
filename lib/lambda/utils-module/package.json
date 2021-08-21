@@ -1,0 +1,15 @@
+{
+  "name": "@local/utils",
+  "version": "1.3.0",
+  "description": "SES App Shared Utils",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Mark Ilott",
+  "license": "MIT",
+  "dependencies": {
+    "email-validator": "^2.0.4",
+    "moment": "^2.29.1"
+  }
+}

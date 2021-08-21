@@ -1,0 +1,14 @@
+{
+  "name": "ses-app-shared-layer",
+  "version": "1.0.0",
+  "description": "SES Lambda Shared Layer",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@local/utils": "file:../../utils-module"
+  }
+}

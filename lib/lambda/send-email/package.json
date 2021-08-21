@@ -1,0 +1,15 @@
+{
+  "name": "ses-app-send-email",
+  "version": "1.0.0",
+  "description": "SES Send Email Function",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@local/utils": "^1.3.0",
+    "aws-sdk": "^2.958.0"
+  }
+}
