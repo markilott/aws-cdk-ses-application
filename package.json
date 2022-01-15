@@ -1,6 +1,6 @@
 {
     "name": "aws-configure-ses",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "AWS CDK Configure SES Email Settings for Domain",
     "main": "bin/deploy.js",
     "directories": {
@@ -13,24 +13,13 @@
     "author": "Mark Ilott",
     "license": "MIT",
     "dependencies": {
-        "@aws-cdk/aws-apigateway": "^1.118.0",
-        "@aws-cdk/aws-certificatemanager": "^1.118.0",
-        "@aws-cdk/aws-dynamodb": "^1.118.0",
-        "@aws-cdk/aws-iam": "^1.118.0",
-        "@aws-cdk/aws-lambda": "^1.118.0",
-        "@aws-cdk/aws-route53": "^1.118.0",
-        "@aws-cdk/aws-route53-targets": "^1.118.0",
-        "@aws-cdk/aws-s3": "^1.118.0",
-        "@aws-cdk/aws-secretsmanager": "^1.118.0",
-        "@aws-cdk/aws-sns": "^1.118.0",
-        "@aws-cdk/aws-sns-subscriptions": "^1.118.0",
-        "@aws-cdk/core": "^1.118.0",
-        "@aws-cdk/custom-resources": "^1.118.0",
+        "aws-cdk-lib": "^2.8.0",
+        "constructs": "^10.0.34",
         "@local/utils": "file:./lib/lambda/utils-module"
     },
     "devDependencies": {
-        "eslint": "^7.32.0",
-        "eslint-config-airbnb-base": "^14.2.1",
-        "eslint-plugin-import": "^2.24.0"
+        "eslint": "^8.6.0",
+        "eslint-config-airbnb-base": "^15.0.0",
+        "eslint-plugin-import": "^2.25.3"
     }
 }
