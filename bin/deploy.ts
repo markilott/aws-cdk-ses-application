@@ -6,10 +6,11 @@
  */
 
 /* eslint-disable no-new */
-const { App } = require('aws-cdk-lib');
-const { SesApplicationStack } = require('../lib/application-stack');
-const { SesConfigStack } = require('../lib/ses-config-stack');
-const { appAttr, sesAttr, domainAttr } = require('../lib/options');
+import 'source-map-support/register';
+import { App } from 'aws-cdk-lib';
+import { SesApplicationStack } from '../lib/application-stack';
+import { SesConfigStack } from '../lib/ses-config-stack';
+import { appAttr, sesAttr, domainAttr } from '../config';
 
 const app = new App();
 

@@ -1,23 +1,35 @@
 /* eslint-disable no-new */
-const { AwsCustomResource, AwsCustomResourcePolicy } = require('aws-cdk-lib').custom_resources;
-const { HostedZone, CnameRecord } = require('aws-cdk-lib').aws_route53;
-const { PolicyStatement, Effect } = require('aws-cdk-lib').aws_iam;
-const { Topic } = require('aws-cdk-lib').aws_sns;
-const { EmailSubscription } = require('aws-cdk-lib').aws_sns_subscriptions;
-const { Stack, CfnOutput } = require('aws-cdk-lib');
+import { AwsCustomResource, AwsCustomResourcePolicy } from 'aws-cdk-lib/custom-resources';
+import {
+    HostedZone, CnameRecord, HostedZoneAttributes, IHostedZone,
+} from 'aws-cdk-lib/aws-route53';
+import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { Topic } from 'aws-cdk-lib/aws-sns';
+import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
+import { Stack, CfnOutput, StackProps } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
 
 const reqEventTypes = ['REJECT', 'BOUNCE', 'COMPLAINT'];
 
-class SesConfigStack extends Stack {
-    /**
-     * Configures SES domain and verified email addresses.
-     * A Route53 Domain in the same Account is required for fully automated setup.
-     *
-     * @param {cdk.Construct} scope
-     * @param {string} id
-     * @param {cdk.StackProps=} props
-     */
-    constructor(scope, id, props) {
+interface SesConfigStackProps extends StackProps {
+    sesAttr: {
+        notifList: string[],
+    },
+    domainAttr: HostedZoneAttributes,
+}
+
+/**
+ * Configures SES domain and verified email addresses.
+ * A Route53 Domain in the same Account is required for fully automated setup.
+ *
+ * @param {Construct} scope
+ * @param {string} id
+ * @param {SesConfigStackProps} props
+ */
+export class SesConfigStack extends Stack {
+    zone: IHostedZone;
+
+    constructor(scope: Construct, id: string, props: SesConfigStackProps) {
         super(scope, id, props);
 
         console.log('Stack Name: ', this.stackName);
@@ -157,5 +169,3 @@ class SesConfigStack extends Stack {
         });
     }
 }
-
-module.exports = { SesConfigStack };
