@@ -1,38 +1,65 @@
 /* eslint-disable no-new */
-const { AwsCustomResource, AwsCustomResourcePolicy } = require('aws-cdk-lib').custom_resources;
-const {
+import { AwsCustomResource, AwsCustomResourcePolicy } from 'aws-cdk-lib/custom-resources';
+import {
     PolicyStatement, PolicyDocument, AnyPrincipal, Effect,
-} = require('aws-cdk-lib').aws_iam;
-const { Topic } = require('aws-cdk-lib').aws_sns;
-const { LambdaSubscription } = require('aws-cdk-lib').aws_sns_subscriptions;
-const { Secret } = require('aws-cdk-lib').aws_secretsmanager;
-const { Table, BillingMode, AttributeType } = require('aws-cdk-lib').aws_dynamodb;
-const {
+} from 'aws-cdk-lib/aws-iam';
+import { Topic } from 'aws-cdk-lib/aws-sns';
+import { LambdaSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
+import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import {
+    Table, BillingMode, AttributeType, ProjectionType,
+} from 'aws-cdk-lib/aws-dynamodb';
+import {
     Function, Code, Runtime, LayerVersion, AssetCode,
-} = require('aws-cdk-lib').aws_lambda;
-const { HostedZone, ARecord, RecordTarget } = require('aws-cdk-lib').aws_route53;
-const { ApiGatewayDomain } = require('aws-cdk-lib').aws_route53_targets;
-const { Certificate, CertificateValidation } = require('aws-cdk-lib').aws_certificatemanager;
-const {
+} from 'aws-cdk-lib/aws-lambda';
+import {
+    HostedZone, ARecord, RecordTarget, HostedZoneAttributes,
+} from 'aws-cdk-lib/aws-route53';
+import { ApiGatewayDomain } from 'aws-cdk-lib/aws-route53-targets';
+import { Certificate, CertificateValidation } from 'aws-cdk-lib/aws-certificatemanager';
+import {
     DomainName, EndpointType, SecurityPolicy, BasePathMapping, RestApi, ApiKey, Period, LambdaIntegration,
-} = require('aws-cdk-lib').aws_apigateway;
-const {
-    Stack, Duration, RemovalPolicy, CfnOutput,
-} = require('aws-cdk-lib');
+    UsagePlanProps, UsagePlan, Model, JsonSchemaVersion, JsonSchemaType,
+} from 'aws-cdk-lib/aws-apigateway';
+import {
+    Stack, Duration, RemovalPolicy, CfnOutput, StackProps,
+} from 'aws-cdk-lib';
+import { Construct } from 'constructs';
 
 const deliveryEventTypes = ['SEND', 'DELIVERY', 'OPEN', 'CLICK'];
 const reqEventTypes = ['REJECT', 'BOUNCE', 'COMPLAINT'];
 
-class SesApplicationStack extends Stack {
-    /**
-     * Configures an API and application for sending email via SES.
-     * Requires configuration of a domain in SES.
-     *
-     * @param {cdk.Construct} scope
-     * @param {string} id
-     * @param {cdk.StackProps=} props
-     */
-    constructor(scope, id, props) {
+interface ZoneAtttributes extends HostedZoneAttributes {
+    apiHostname: string,
+    certificateArn: string,
+}
+
+interface SesApplicationStackProps extends StackProps {
+    appAttr: {
+        appName: string,
+        utcOffset: string,
+        defaultFrom: string,
+        emailList: string[],
+        useApiKey: boolean,
+        allowCidr: string[],
+        dailyQuota: number,
+        logExpiry: number,
+    }
+    domainAttr: ZoneAtttributes,
+}
+
+/**
+ * Configures an API and application for sending email via SES.
+ * Requires configuration of a domain in SES.
+ *
+ * @param {Construct} scope
+ * @param {string} id
+ * @param {SesApplicationStackProps} props
+ */
+export class SesApplicationStack extends Stack {
+    apiKeySecret: Secret;
+
+    constructor(scope: Construct, id: string, props: SesApplicationStackProps) {
         super(scope, id, props);
 
         console.log('Stack Name: ', this.stackName);
@@ -165,7 +192,7 @@ class SesApplicationStack extends Stack {
             indexName: destinationIdIndexName,
             partitionKey: { name: 'Destination', type: AttributeType.STRING },
             sortKey: { name: 'LogTime', type: AttributeType.STRING },
-            projectionType: 'ALL',
+            projectionType: ProjectionType.ALL,
         });
 
         // Lambda Functions ====================================================================================
@@ -318,23 +345,23 @@ class SesApplicationStack extends Stack {
         }
 
         // API Usage Plan - to attach the API Key or set a Quota
-        const defUsagePlanProps = {
+        const defUsagePlanProps: UsagePlanProps = {
             name: `${appName} Default Usage Plan`,
             apiStages: [{ api, stage: api.deploymentStage }],
+            // Add daily quota if required. It is also possible to rate limit but it requires more thought.
+            quota: (dailyQuota)
+                ? {
+                    limit: dailyQuota,
+                    period: Period.DAY,
+                }
+                : undefined,
         };
-        // Add daily quota if required. It is also possible to rate limit but it requires more thought.
-        if (dailyQuota) {
-            defUsagePlanProps.quota = {
-                limit: dailyQuota,
-                period: Period.DAY,
-            };
-        }
 
         // Add API Key if required
         if (!allowCidr.length && !useApiKey) { console.log('WARNING: The API will be open to the public'); }
         if (useApiKey) {
             // Create a secret and generate key
-            const apiKeySecret = new Secret(this, `${appName}ApiKeySecret`, {
+            this.apiKeySecret = new Secret(this, `${appName}ApiKeySecret`, {
                 description: `${appName} API Key`,
                 generateSecretString: {
                     secretStringTemplate: JSON.stringify({
@@ -347,24 +374,42 @@ class SesApplicationStack extends Stack {
             // The key can be retrieved from the Secret
             new CfnOutput(this, 'apiKeySecretArn', {
                 description: `${appName} API Key Arn`,
-                value: apiKeySecret.secretFullArn,
-            });
-
-            // Create the API Key and attach to Usage Plan
-            defUsagePlanProps.apiKey = new ApiKey(this, `${appName}ApiKey`, {
-                description: `${appName} API Key`,
-                value: apiKeySecret.secretValueFromJson('API_KEY'),
-                enabled: true,
+                value: this.apiKeySecret.secretArn,
             });
         }
 
         // Attach the Usage Plan to the API
-        api.addUsagePlan('defaultUsagePlan', defUsagePlanProps);
+        const usagePlan = new UsagePlan(this, 'defaultUsagePlan', defUsagePlanProps);
+
+        // Create the API Key and attach to Usage Plan
+        if (useApiKey) {
+            usagePlan.addApiKey(new ApiKey(this, `${appName}ApiKey`, {
+                description: `${appName} API Key`,
+                value: this.apiKeySecret.secretValueFromJson('API_KEY').toString(),
+                enabled: true,
+            }));
+        }
 
         // API Resources and Methods ========================================================================
+
+        // Model for the integration Method Responses
+        const responseModel = new Model(this, 'responseModel', {
+            restApi: api,
+            contentType: 'application/json',
+            schema: {
+                schema: JsonSchemaVersion.DRAFT7,
+                title: 'JsonResponse',
+                type: JsonSchemaType.OBJECT,
+                properties: {
+                    state: { type: JsonSchemaType.STRING },
+                    greeting: { type: JsonSchemaType.STRING },
+                },
+            },
+        });
+
         // Common Props for Methods
         const responseModels = {
-            'application/json': '$input.body',
+            'application/json': responseModel,
         };
         const methodResponses = [
             {
@@ -519,4 +564,3 @@ class SesApplicationStack extends Stack {
         });
     }
 }
-module.exports = { SesApplicationStack };

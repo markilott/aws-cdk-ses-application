@@ -1,6 +1,6 @@
 # AWS CDK SES Email App
 
-This Javascript CDK project creates an API and application for sending email via SES, including tracking and logging in DynamoDb.
+This Typescript CDK project creates an API and application for sending email via SES, including tracking and logging in DynamoDb.
 
 Optionally it will also confgure the required domain in SES if it is not already setup.
 
@@ -30,7 +30,7 @@ Assuming you have the AWS CLI and CDK installed and configured already...
 Setup the project:
 - Clone the repo
 - run `npm install`
-- Update the `lib/options.js` file with your own preferences
+- Update the `config/index.ts` file with your own preferences
 - run `npm run build` (use Git Bash or other Linux shell on Windows)
 
 &nbsp;
