@@ -1,4 +1,3 @@
-/* eslint-disable no-new */
 import { AwsCustomResource, AwsCustomResourcePolicy } from 'aws-cdk-lib/custom-resources';
 import {
     PolicyStatement, PolicyDocument, AnyPrincipal, Effect,
@@ -9,9 +8,9 @@ import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import {
     Table, BillingMode, AttributeType, ProjectionType,
 } from 'aws-cdk-lib/aws-dynamodb';
-import {
-    Function, Code, Runtime, LayerVersion, AssetCode,
-} from 'aws-cdk-lib/aws-lambda';
+import { Runtime } from 'aws-cdk-lib/aws-lambda';
+import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import {
     HostedZone, ARecord, RecordTarget, HostedZoneAttributes,
 } from 'aws-cdk-lib/aws-route53';
@@ -84,8 +83,6 @@ export class SesApplicationStack extends Stack {
                 'ses:DeleteConfigurationSetEventDestination',
                 'ses:CreateEmailIdentity',
                 'ses:DeleteEmailIdentity',
-                'ses:CreateEmailIdentity',
-                'ses:DeleteEmailIdentity',
             ],
             resources: ['*'], // Global is required to Create. Delete could be restricted if required.
             effect: Effect.ALLOW,
@@ -111,7 +108,9 @@ export class SesApplicationStack extends Stack {
                 },
             },
             policy: AwsCustomResourcePolicy.fromStatements([sesPolicy]),
-            logRetention: 7,
+            logGroup: new LogGroup(this, `${ConfigurationSetName}Logs`, {
+                retention: RetentionDays.ONE_WEEK,
+            }),
         });
 
         // Add an SNS Destination for SES notifications
@@ -148,13 +147,22 @@ export class SesApplicationStack extends Stack {
                 },
             },
             policy: AwsCustomResourcePolicy.fromStatements([sesPolicy]),
-            logRetention: 7,
+            logGroup: new LogGroup(this, `${EventDestinationName}Logs`, {
+                retention: RetentionDays.ONE_WEEK,
+            }),
         });
         snsDest.node.addDependency(configSet);
 
-        // Add email addresses and send verification emails
-        emailList.forEach((email, i) => {
-            new AwsCustomResource(this, `emailIdentity${i + 1}`, {
+        /**
+         * Add email addresses and send verification emails.
+         *
+         * Each identity is keyed by the email address itself (not its position in
+         * emailList) so that adding, removing or reordering entries only ever
+         * touches the resource for that specific email, rather than causing
+         * CloudFormation to treat unrelated identities as updates/replacements.
+         */
+        emailList.forEach((email) => {
+            new AwsCustomResource(this, `emailIdentity-${email}`, {
                 onUpdate: {
                     service: 'SESV2',
                     action: 'createEmailIdentity',
@@ -171,7 +179,9 @@ export class SesApplicationStack extends Stack {
                     },
                 },
                 policy: AwsCustomResourcePolicy.fromStatements([sesPolicy]),
-                logRetention: 7,
+                logGroup: new LogGroup(this, `emailIdentity-${email}-Logs`, {
+                    retention: RetentionDays.ONE_WEEK,
+                }),
             });
         });
 
@@ -197,21 +207,16 @@ export class SesApplicationStack extends Stack {
 
         // Lambda Functions ====================================================================================
 
-        // Shared Layer for utils module
-        const sharedLayer = new LayerVersion(this, 'sharedLayer', {
-            compatibleRuntimes: [Runtime.NODEJS_14_X],
-            code: AssetCode.fromAsset(`${__dirname}/lambda/shared-layer`),
-            description: 'SES App Shared Layer',
-            layerVersionName: `${appName}Shared`,
-        });
-
-        // Lambda common props
+        // Lambda common props.
+        // The @local/utils module is bundled directly into each function by esbuild
+        // (NodejsFunction), so there is no longer a need for a shared Lambda Layer.
         const lambdaProps = {
-            runtime: Runtime.NODEJS_14_X,
-            handler: 'index.handler',
+            runtime: Runtime.NODEJS_24_X,
             timeout: Duration.seconds(5),
-            layers: [sharedLayer],
-            logRetention: 30,
+            bundling: {
+                sourceMap: true,
+                externalModules: ['@aws-sdk/*'],
+            },
         };
 
         // Lambda common environment
@@ -221,14 +226,17 @@ export class SesApplicationStack extends Stack {
         };
 
         // Lambda Send Email Function
-        const sendEmailFnc = new Function(this, 'sendEmailFnc', {
+        const sendEmailFnc = new NodejsFunction(this, 'sendEmailFnc', {
             description: 'Send Email API function',
-            code: Code.fromAsset(`${__dirname}/lambda/send-email`),
+            entry: `${__dirname}/lambda/send-email/index.ts`,
             environment: {
                 CONFIGURATION_SET_NAME: ConfigurationSetName,
                 DEFAULT_FROM_ADDRESS: `${defaultFrom}@${zoneName}`,
                 ...lambdaEnv,
             },
+            logGroup: new LogGroup(this, 'sendEmailFncLogs', {
+                retention: RetentionDays.ONE_MONTH,
+            }),
             ...lambdaProps,
         });
         table.grantReadWriteData(sendEmailFnc);
@@ -240,26 +248,32 @@ export class SesApplicationStack extends Stack {
         }));
 
         // Lambda notification log function
-        const notificationLogFnc = new Function(this, 'notificationLogFnc', {
+        const notificationLogFnc = new NodejsFunction(this, 'notificationLogFnc', {
             description: 'SES notifications log function',
-            code: Code.fromAsset(`${__dirname}/lambda/notification-log`),
+            entry: `${__dirname}/lambda/notification-log/index.ts`,
             environment: {
                 ...lambdaEnv,
             },
+            logGroup: new LogGroup(this, 'notificationLogFncLogs', {
+                retention: RetentionDays.ONE_MONTH,
+            }),
             ...lambdaProps,
         });
         sesNotificationsTopic.addSubscription(new LambdaSubscription(notificationLogFnc));
         table.grantReadWriteData(notificationLogFnc);
 
         // Lambda Query log function
-        const queryLogFnc = new Function(this, 'queryLogFnc', {
+        const queryLogFnc = new NodejsFunction(this, 'queryLogFnc', {
             description: 'SES query log function',
-            code: Code.fromAsset(`${__dirname}/lambda/query-log`),
+            entry: `${__dirname}/lambda/query-log/index.ts`,
             environment: {
                 UTC_OFFSET: utcOffset,
                 DESTINATION_ID_INDEX: destinationIdIndexName,
                 ...lambdaEnv,
             },
+            logGroup: new LogGroup(this, 'queryLogFncLogs', {
+                retention: RetentionDays.ONE_MONTH,
+            }),
             ...lambdaProps,
         });
         table.grantReadData(queryLogFnc);

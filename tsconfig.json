@@ -10,7 +10,6 @@
         "noImplicitAny": true,
         "strictNullChecks": true,
         "noImplicitThis": true,
-        "alwaysStrict": false,
         "noUnusedLocals": false,
         "noUnusedParameters": false,
         "noImplicitReturns": true,
@@ -19,14 +18,22 @@
         "inlineSources": false,
         "experimentalDecorators": true,
         "strictPropertyInitialization": false,
+        "types": [
+            "node"
+        ],
         "typeRoots": [
             "./node_modules/@types"
         ],
+        "paths": {
+            "@local/utils": [
+                "./lib/lambda/utils-module"
+            ]
+        }
     },
     "exclude": [
         "node_modules",
         "cdk.out",
         "**.js",
-        ".eslintrc.js",
+        "eslint.config.js",
     ]
 }

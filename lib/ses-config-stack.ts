@@ -1,4 +1,3 @@
-/* eslint-disable no-new */
 import { AwsCustomResource, AwsCustomResourcePolicy } from 'aws-cdk-lib/custom-resources';
 import {
     HostedZone, CnameRecord, HostedZoneAttributes, IHostedZone,
@@ -6,6 +5,7 @@ import {
 import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 import { Topic } from 'aws-cdk-lib/aws-sns';
 import { EmailSubscription } from 'aws-cdk-lib/aws-sns-subscriptions';
+import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Stack, CfnOutput, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -81,7 +81,9 @@ export class SesConfigStack extends Stack {
                 },
             },
             policy: AwsCustomResourcePolicy.fromStatements([sesPolicy]),
-            logRetention: 7,
+            logGroup: new LogGroup(this, `${ConfigurationSetName}Logs`, {
+                retention: RetentionDays.ONE_WEEK,
+            }),
         });
 
         // Add an SNS Destination for SES notifications
@@ -115,7 +117,9 @@ export class SesConfigStack extends Stack {
                 },
             },
             policy: AwsCustomResourcePolicy.fromStatements([sesPolicy]),
-            logRetention: 7,
+            logGroup: new LogGroup(this, `${EventDestinationName}Logs`, {
+                retention: RetentionDays.ONE_WEEK,
+            }),
         });
         snsDest.node.addDependency(configSet);
 
@@ -141,7 +145,9 @@ export class SesConfigStack extends Stack {
                 },
             },
             policy: AwsCustomResourcePolicy.fromStatements([sesPolicy]),
-            logRetention: 7,
+            logGroup: new LogGroup(this, 'domainIdentityLogs', {
+                retention: RetentionDays.ONE_WEEK,
+            }),
         });
         domainIdentity.node.addDependency(configSet);
         // Assuming there are always 3 tokens returned as that is what all the docs indicate

@@ -1,18 +1,23 @@
-const { logs, errors, utils } = require('@local/utils');
+import { logs, errors, utils } from '@local/utils';
 
 const { ValidationError, ApiError } = errors;
 
+type EventProps = {
+    params?: {
+        messageId?: string,
+        destination?: string,
+        exclusiveStartKey?: string,
+    },
+    context?: {
+        resourcePath?: string,
+        requestId?: string,
+    },
+};
+
 /**
  * Query API handler
- * @param {object} params
- * @param {string} [params.messageId]
- * @param {string} [params.destination]
- * @param {string} [params.exclusiveStartKey]
- * @param {object} context
- * @param {string} context.resourcePath
- * @param {string} [context.requestId]
  */
-exports.handler = async (event) => {
+export const handler = async (event: EventProps) => {
     console.log('Event: ', JSON.stringify(event));
     const { params = {}, context = {} } = event;
     const { messageId = '', destination = '', exclusiveStartKey = '' } = params;
@@ -32,7 +37,7 @@ exports.handler = async (event) => {
         const queryParams = {
             messageId: decodeURIComponent(messageId),
             destination: decodeURIComponent(destination),
-            exclusiveStartKey: (exclusiveStartKey) ? JSON.parse(decodeURIComponent(exclusiveStartKey)) : '',
+            exclusiveStartKey: (exclusiveStartKey) ? JSON.parse(decodeURIComponent(exclusiveStartKey)) : {},
         };
 
         if (query === 'destination' && !utils.isValidEmail(queryParams.destination)) { throw new ValidationError('A valid email address destination is required'); }
@@ -42,6 +47,7 @@ exports.handler = async (event) => {
         if (query === 'messageId') { response = await logs.queryMessageId(queryParams); }
         if (query === 'destination') { response = await logs.queryDestination(queryParams); }
 
+        if (!response) { throw new Error('Unexpected query result'); }
         if (!response.success) { throw new ValidationError(response.message); }
 
         return {
@@ -49,9 +55,9 @@ exports.handler = async (event) => {
             requestId,
         };
     } catch (err) {
-        err.message = (err.message) || 'Internal handler error';
+        if (!(err instanceof Error)) { throw err; }
         console.log('Error caught: ', err);
         const statusCode = (err instanceof ValidationError) ? 400 : 500;
-        throw new ApiError(err.message, statusCode, requestId);
+        throw new ApiError(err.message || 'Internal handler error', statusCode, requestId);
     }
 };
