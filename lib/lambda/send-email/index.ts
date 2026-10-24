@@ -1,10 +1,9 @@
-// eslint-disable-next-line import/no-extraneous-dependencies
-const AWS = require('aws-sdk');
-const { utils, logs, errors } = require('@local/utils');
+import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
+import { utils, logs, errors } from '@local/utils';
 
 const { ValidationError, ApiError } = errors;
 
-const ses = new AWS.SESV2();
+const ses = new SESv2Client();
 
 const configSetName = process.env.CONFIGURATION_SET_NAME;
 const defaultFrom = process.env.DEFAULT_FROM_ADDRESS;
@@ -13,23 +12,28 @@ const defaultFrom = process.env.DEFAULT_FROM_ADDRESS;
 // https://docs.aws.amazon.com/ses/latest/DeveloperGuide/using-ses-api-error-codes.html
 const ses400Codes = ['MailFromDomainNotVerified', 'MessageRejected'];
 
+type EventProps = {
+    params?: {
+        toAddress?: string,
+        replyToAddresses?: string[],
+        fromAddress?: string,
+        subject?: string,
+        messageText?: string,
+        messageHtml?: string,
+        sourceId?: string,
+    },
+    context?: {
+        requestId?: string,
+    },
+};
+
 /**
  * Receive API requests and send email via SES
  * It is possible to send to multiple addresses and include cc and bcc with a single call, however
  * this makes tracking individual messages very difficult.
  * We are limiting to a single toAddress so we get a unique messageId.
- * @param {object} context
- * @param {string} [context.requestId]
- * @param {object} params
- * @param {string} params.toAddress
- * @param {string[]} [params.replyToAddresses]
- * @param {string} fromAddress - Must be an address on a verified domain
- * @param {string} subject
- * @param {string} messageText
- * @param {string} messageHtml
- * @param {string} [sourceId]
  */
-exports.handler = async (event) => {
+export const handler = async (event: EventProps) => {
     // console.log('Event: ', JSON.stringify(event));
     const { params = {}, context = {} } = event;
     const {
@@ -43,6 +47,8 @@ exports.handler = async (event) => {
         requestId,
         sourceId,
         destination: toAddress,
+        timestamp: '',
+        errorMessage: '',
     };
 
     try {
@@ -57,7 +63,7 @@ exports.handler = async (event) => {
         });
 
         // Email body
-        const Body = {};
+        const Body: { Text?: { Data: string, Charset: string }, Html?: { Data: string, Charset: string } } = {};
         if (messageText) {
             Body.Text = {
                 Data: messageText,
@@ -71,8 +77,9 @@ exports.handler = async (event) => {
             };
         }
 
-        // Email params
-        const emailParams = {
+        // Send the message
+        result.timestamp = utils.getTimestamp();
+        const { MessageId: messageId } = await ses.send(new SendEmailCommand({
             Content: {
                 Simple: {
                     Body,
@@ -86,29 +93,25 @@ exports.handler = async (event) => {
             Destination: {
                 ToAddresses: [toAddress],
             },
-            FromEmailAddress: (fromAddress) || defaultFrom,
-        };
-        // console.log('Email params: ', JSON.stringify(emailParams));
-
-        // Send the message
-        result.timestamp = utils.getTimestamp();
-        const { MessageId: messageId } = await ses.sendEmail(emailParams).promise();
+            FromEmailAddress: fromAddress || defaultFrom,
+        }));
 
         result.status = 'QUEUED';
         result.success = true;
-        result.messageId = messageId;
+        result.messageId = messageId || requestId;
         return result;
     } catch (err) {
-        err.message = (err.message) || 'Internal Error';
+        if (!(err instanceof Error)) { throw err; }
         console.log('Error caught: ', err);
-        const statusCode = (err instanceof ValidationError || ses400Codes.includes(err.code)) ? 400 : 500;
-        result.errorMessage = err.message;
-        throw new ApiError(err.message, statusCode, requestId, sourceId);
+        const errorCode = ('code' in err) ? String(err.code) : '';
+        const statusCode = (err instanceof ValidationError || ses400Codes.includes(errorCode)) ? 400 : 500;
+        result.errorMessage = err.message || 'Internal Error';
+        throw new ApiError(result.errorMessage, statusCode, requestId, sourceId);
     } finally {
         // Write the result to the DynamoDb table
         await logs.writeLog({
             ...result,
-            messageId: (result.messageId) || requestId,
+            messageId: result.messageId || requestId,
         });
     }
 };
